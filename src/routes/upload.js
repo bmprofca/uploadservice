@@ -26,7 +26,16 @@ function extensionFromMime(mime) {
 
 function buildStorage(uploadDir) {
   return multer.diskStorage({
-    destination: (_req, _file, cb) => cb(null, uploadDir),
+    destination: (_req, _file, cb) => {
+      // Hosters sometimes mount/deploy without creating the uploads directory.
+      // Ensure it exists before multer writes the incoming file.
+      try {
+        fs.mkdirSync(uploadDir, { recursive: true });
+      } catch (err) {
+        // Still try to proceed; multer will surface any actual filesystem issue.
+      }
+      cb(null, uploadDir);
+    },
     filename: (_req, file, cb) => {
       const fromName = path.extname(file.originalname || "");
       const ext =

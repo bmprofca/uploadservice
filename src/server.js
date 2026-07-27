@@ -1,4 +1,5 @@
 require("dotenv").config();
+const fs = require("node:fs");
 const path = require("node:path");
 const cors = require("cors");
 const express = require("express");
@@ -25,6 +26,13 @@ app.use(express.json());
 app.get("/health", (_req, res) => {
   res.json({ ok: true, service: "upload-service" });
 });
+
+// Ensure uploads directory exists in production.
+try {
+  fs.mkdirSync(uploadDir, { recursive: true });
+} catch (err) {
+  console.error("Failed to create uploadDir:", uploadDir, err);
+}
 
 app.get("/status", async (_req, res, next) => {
   try {
