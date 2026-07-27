@@ -1,11 +1,9 @@
-import "dotenv/config";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-import cors from "cors";
-import express from "express";
-import uploadRouter from "./routes/upload.js";
+require("dotenv").config();
+const path = require("node:path");
+const cors = require("cors");
+const express = require("express");
+const uploadRouter = require("./routes/upload");
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.join(__dirname, "..");
 const uploadDir = path.join(rootDir, "uploads");
 

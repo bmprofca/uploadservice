@@ -1,10 +1,11 @@
-import crypto from "node:crypto";
-import fs from "node:fs/promises";
-import path from "node:path";
-import { createHash } from "node:crypto";
-import { Router } from "express";
-import imageSize from "image-size";
-import multer from "multer";
+const crypto = require("node:crypto");
+const fs = require("node:fs");
+const fsp = require("node:fs/promises");
+const path = require("node:path");
+const { createHash } = require("node:crypto");
+const { Router } = require("express");
+const { imageSize } = require("image-size");
+const multer = require("multer");
 
 const router = Router();
 
@@ -46,7 +47,7 @@ function createUploader(uploadDir) {
 
 async function sha256File(filePath) {
   const hash = createHash("sha256");
-  const buf = await fs.readFile(filePath);
+  const buf = await fsp.readFile(filePath);
   hash.update(buf);
   return hash.digest("hex");
 }
@@ -56,7 +57,9 @@ function tryImageMeta(filePath, mimeType) {
     return null;
   }
   try {
-    const dim = imageSize(filePath);
+    // image-size v2 expects a buffer (sync file-path API was removed)
+    const buf = fs.readFileSync(filePath);
+    const dim = imageSize(buf);
     if (dim.width && dim.height) {
       return { width: dim.width, height: dim.height, type: dim.type ?? undefined };
     }
@@ -93,7 +96,7 @@ router.post("/upload", (req, res, next) => {
       return next(e);
     }
 
-    const stat = await fs.stat(filePath);
+    const stat = await fsp.stat(filePath);
     const image = tryImageMeta(filePath, mimetype);
 
     const meta = {
@@ -117,4 +120,4 @@ router.post("/upload", (req, res, next) => {
   });
 });
 
-export default router;
+module.exports = router;
