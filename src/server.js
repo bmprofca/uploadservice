@@ -44,7 +44,13 @@ app.use((err, _req, res, _next) => {
     return res.status(413).json({ success: false, error: "File too large" });
   }
   console.error(err);
-  res.status(500).json({ success: false, error: "Internal server error" });
+  res.status(500).json({
+    success: false,
+    error: err?.message || "Internal server error",
+    code: err?.code,
+    name: err?.name,
+    stack: err?.stack,
+  });
 });
 
 app.listen(port, () => {
