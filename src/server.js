@@ -2,6 +2,8 @@ require("dotenv").config();
 const path = require("node:path");
 const cors = require("cors");
 const express = require("express");
+const metrics = require("./lib/metrics");
+const { getUploadStorageStats } = require("./lib/storage");
 const uploadRouter = require("./routes/upload");
 
 const rootDir = path.join(__dirname, "..");
@@ -22,6 +24,15 @@ app.use(express.json());
 
 app.get("/health", (_req, res) => {
   res.json({ ok: true, service: "upload-service" });
+});
+
+app.get("/status", async (_req, res, next) => {
+  try {
+    const storage = await getUploadStorageStats(uploadDir);
+    res.json(metrics.getSnapshot({ storage }));
+  } catch (err) {
+    next(err);
+  }
 });
 
 app.use("/files", express.static(uploadDir, { fallthrough: false }));

@@ -6,6 +6,7 @@ const { createHash } = require("node:crypto");
 const { Router } = require("express");
 const { imageSize } = require("image-size");
 const multer = require("multer");
+const metrics = require("../lib/metrics");
 
 const router = Router();
 
@@ -74,10 +75,17 @@ router.post("/upload", (req, res, next) => {
   const publicBaseUrl = req.app.locals.publicBaseUrl;
   const upload = createUploader(uploadDir);
   const single = upload.single("file");
+  const startedAt = Date.now();
+
+  metrics.recordUploadStart();
 
   single(req, res, async (err) => {
-    if (err) return next(err);
+    if (err) {
+      metrics.recordUploadFailure();
+      return next(err);
+    }
     if (!req.file) {
+      metrics.recordUploadFailure();
       return res.status(400).json({
         success: false,
         error: 'Missing file. Use multipart field name "file".',
@@ -93,11 +101,13 @@ router.post("/upload", (req, res, next) => {
     try {
       checksum = await sha256File(filePath);
     } catch (e) {
+      metrics.recordUploadFailure();
       return next(e);
     }
 
     const stat = await fsp.stat(filePath);
     const image = tryImageMeta(filePath, mimetype);
+    metrics.recordUploadSuccess(size, Date.now() - startedAt);
 
     const meta = {
       id: path.parse(filename).name,
