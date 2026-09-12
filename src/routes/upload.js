@@ -1,12 +1,17 @@
-const crypto = require("node:crypto");
-const fs = require("node:fs");
-const fsp = require("node:fs/promises");
-const path = require("node:path");
-const { createHash } = require("node:crypto");
-const { Router } = require("express");
-const { imageSize } = require("image-size");
-const multer = require("multer");
-const metrics = require("../lib/metrics");
+import crypto from "node:crypto";
+import fs from "node:fs";
+import fsp from "node:fs/promises";
+import path from "node:path";
+import { createHash } from "node:crypto";
+import { Router } from "express";
+import { imageSize } from "image-size";
+import multer from "multer";
+import {
+  recordUploadFailure,
+  recordUploadStart,
+  recordUploadSuccess,
+} from "../lib/metrics.js";
+import { requireApiKey } from "../middleware/auth.js";
 
 const router = Router();
 
@@ -24,24 +29,24 @@ function extensionFromMime(mime) {
   return mimeToExt[mime] || "";
 }
 
+function getTtlMs() {
+  const hours = Number(process.env.FILE_TTL_HOURS) || 24;
+  return hours * 60 * 60 * 1000;
+}
+
 function buildStorage(uploadDir) {
   return multer.diskStorage({
     destination: (_req, _file, cb) => {
-      // Hosters sometimes mount/deploy without creating the uploads directory.
-      // Ensure it exists before multer writes the incoming file.
       try {
         fs.mkdirSync(uploadDir, { recursive: true });
-      } catch (err) {
-        // Still try to proceed; multer will surface any actual filesystem issue.
+      } catch {
+        // Multer will surface any real filesystem failure.
       }
       cb(null, uploadDir);
     },
     filename: (_req, file, cb) => {
       const fromName = path.extname(file.originalname || "");
-      const ext =
-        fromName ||
-        extensionFromMime(file.mimetype) ||
-        "";
+      const ext = fromName || extensionFromMime(file.mimetype) || "";
       cb(null, `${crypto.randomUUID()}${ext}`);
     },
   });
@@ -67,7 +72,6 @@ function tryImageMeta(filePath, mimeType) {
     return null;
   }
   try {
-    // image-size v2 expects a buffer (sync file-path API was removed)
     const buf = fs.readFileSync(filePath);
     const dim = imageSize(buf);
     if (dim.width && dim.height) {
@@ -79,22 +83,27 @@ function tryImageMeta(filePath, mimeType) {
   return null;
 }
 
-router.post("/upload", (req, res, next) => {
+async function writeFileMeta(filePath, meta) {
+  const metaPath = `${filePath}.meta.json`;
+  await fsp.writeFile(metaPath, JSON.stringify(meta, null, 2), "utf8");
+}
+
+router.post("/upload", requireApiKey, (req, res, next) => {
   const uploadDir = req.app.locals.uploadDir;
   const publicBaseUrl = req.app.locals.publicBaseUrl;
   const upload = createUploader(uploadDir);
   const single = upload.single("file");
   const startedAt = Date.now();
 
-  metrics.recordUploadStart();
+  recordUploadStart();
 
   single(req, res, async (err) => {
     if (err) {
-      metrics.recordUploadFailure();
+      recordUploadFailure();
       return next(err);
     }
     if (!req.file) {
-      metrics.recordUploadFailure();
+      recordUploadFailure();
       return res.status(400).json({
         success: false,
         error: 'Missing file. Use multipart field name "file".',
@@ -102,7 +111,10 @@ router.post("/upload", (req, res, next) => {
     }
 
     const { filename, originalname, mimetype, size, path: filePath } = req.file;
-    const uploadedAt = new Date().toISOString();
+    const uploadedAtMs = Date.now();
+    const expiresAtMs = uploadedAtMs + getTtlMs();
+    const uploadedAt = new Date(uploadedAtMs).toISOString();
+    const expiresAt = new Date(expiresAtMs).toISOString();
     const relativePath = `/files/${encodeURIComponent(filename)}`;
     const url = `${publicBaseUrl}${relativePath}`;
 
@@ -110,13 +122,12 @@ router.post("/upload", (req, res, next) => {
     try {
       checksum = await sha256File(filePath);
     } catch (e) {
-      metrics.recordUploadFailure();
+      recordUploadFailure();
       return next(e);
     }
 
     const stat = await fsp.stat(filePath);
     const image = tryImageMeta(filePath, mimetype);
-    metrics.recordUploadSuccess(size, Date.now() - startedAt);
 
     const meta = {
       id: path.parse(filename).name,
@@ -127,9 +138,20 @@ router.post("/upload", (req, res, next) => {
       sizeOnDisk: stat.size,
       checksumSha256: checksum,
       uploadedAt,
+      expiresAt,
+      ttlHours: Number(process.env.FILE_TTL_HOURS) || 24,
       relativePath,
       image,
     };
+
+    try {
+      await writeFileMeta(filePath, meta);
+    } catch (e) {
+      recordUploadFailure();
+      return next(e);
+    }
+
+    recordUploadSuccess(size, Date.now() - startedAt);
 
     return res.status(201).json({
       success: true,
@@ -139,4 +161,4 @@ router.post("/upload", (req, res, next) => {
   });
 });
 
-module.exports = router;
+export default router;

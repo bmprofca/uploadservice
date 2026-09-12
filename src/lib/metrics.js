@@ -1,4 +1,4 @@
-const os = require("node:os");
+import os from "node:os";
 
 const startedAt = Date.now();
 const recentUploads = [];
@@ -9,7 +9,7 @@ let totalBytesUploaded = 0;
 let activeUploads = 0;
 let lastUploadAt = null;
 
-function formatBytes(bytes) {
+export function formatBytes(bytes) {
   if (!bytes) return "0 B";
   const units = ["B", "KB", "MB", "GB", "TB"];
   const exponent = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
@@ -36,11 +36,11 @@ function pruneRecentUploads() {
   }
 }
 
-function recordUploadStart() {
+export function recordUploadStart() {
   activeUploads += 1;
 }
 
-function recordUploadSuccess(bytes, durationMs) {
+export function recordUploadSuccess(bytes, durationMs) {
   activeUploads = Math.max(0, activeUploads - 1);
   totalUploads += 1;
   totalBytesUploaded += bytes;
@@ -50,7 +50,7 @@ function recordUploadSuccess(bytes, durationMs) {
   pruneRecentUploads();
 }
 
-function recordUploadFailure() {
+export function recordUploadFailure() {
   activeUploads = Math.max(0, activeUploads - 1);
   failedUploads += 1;
 }
@@ -98,11 +98,12 @@ function getPeakBytesPerSecond(windowMs = 60_000) {
   return Math.max(...buckets.values());
 }
 
-function getSnapshot({ storage } = {}) {
+export function getSnapshot({ storage } = {}) {
   const uptimeMs = Date.now() - startedAt;
   const memory = process.memoryUsage();
   const lastMinute = getWindowStats(60_000);
   const lastFiveMinutes = getWindowStats(5 * 60_000);
+  const ttlHours = Number(process.env.FILE_TTL_HOURS) || 24;
 
   return {
     ok: true,
@@ -143,6 +144,10 @@ function getSnapshot({ storage } = {}) {
       averageUploadSpeedFormatted: lastFiveMinutes.averageUploadSpeedFormatted,
     },
     storage: storage || null,
+    retention: {
+      ttlHours,
+      ttlMs: ttlHours * 60 * 60 * 1000,
+    },
     system: {
       nodeVersion: process.version,
       platform: os.platform(),
@@ -175,11 +180,3 @@ function getSnapshot({ storage } = {}) {
     },
   };
 }
-
-module.exports = {
-  formatBytes,
-  recordUploadStart,
-  recordUploadSuccess,
-  recordUploadFailure,
-  getSnapshot,
-};

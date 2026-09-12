@@ -1,8 +1,8 @@
-const fsp = require("node:fs/promises");
-const path = require("node:path");
-const { formatBytes } = require("./metrics");
+import fsp from "node:fs/promises";
+import path from "node:path";
+import { formatBytes } from "./metrics.js";
 
-async function getUploadStorageStats(uploadDir) {
+export async function getUploadStorageStats(uploadDir) {
   let fileCount = 0;
   let totalSizeBytes = 0;
   let oldestFileAt = null;
@@ -13,7 +13,7 @@ async function getUploadStorageStats(uploadDir) {
 
     await Promise.all(
       entries
-        .filter((entry) => entry.isFile())
+        .filter((entry) => entry.isFile() && !entry.name.endsWith(".meta.json"))
         .map(async (entry) => {
           const filePath = path.join(uploadDir, entry.name);
           const stat = await fsp.stat(filePath);
@@ -40,5 +40,3 @@ async function getUploadStorageStats(uploadDir) {
     newestFileAt,
   };
 }
-
-module.exports = { getUploadStorageStats };
